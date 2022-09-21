@@ -27,17 +27,20 @@ async function queryApis(ctx: ICtx) {
 
 function printResults(
   apiToProductMap: Map<string, ProductContract[]>,
-  productSubMap: Map<string, SubscriptionContract[]>
+  productSubMap: Map<string, SubscriptionContract[]>,
+  allSubscriptionIds: Set<string>
 ) {
+  let totalSubsUsed = 0
   apiToProductMap.forEach((products, api) => {
-    const subCount = productSubMap.get(api)?.length || 0;
+    const subCount = products.map(product => productSubMap.get(product.name || "")?.length || 0).reduce((a, b) => a + b, 0)
     console.log(
       `API ${api} Products = ${products.length}, Subscriptions = ${subCount}`
     );
+    totalSubsUsed += subCount
   });
 }
 
-async function queryProductSubscriptions(ctx: ICtx, product: ProductContract, productSubMap: Map<string, SubscriptionContract[]>){
+async function queryProductSubscriptions(ctx: ICtx, product: ProductContract, productSubMap: Map<string, SubscriptionContract[]>, allSubscriptionIds: Set<string>){
   console.log(`querying subscriptions for product ${product.name}`);
   const subs = ctx.client.productSubscriptions.list(
     ctx.resourceGroupName,
@@ -47,6 +50,7 @@ async function queryProductSubscriptions(ctx: ICtx, product: ProductContract, pr
   const subscriptions: SubscriptionContract[] = [];
   for await (const sub of subs) {
     subscriptions.push(sub);
+    allSubscriptionIds.add(sub.id || "")
   }
   productSubMap.set(product.name || "", subscriptions);
 }
@@ -93,14 +97,15 @@ async function queryApiManagement(
 
   const apiToProductMap = await queryApis(ctx);
   const productSubMap = new Map<string, SubscriptionContract[]>();
+  const allSubscriptionIds = new Set<string>()
 
   console.log("querying products");
   const products = client.product.listByService(resourceGroupName, serviceName);
   for await (const product of products) {
-    await queryProductSubscriptions(ctx, product, productSubMap)
+    await queryProductSubscriptions(ctx, product, productSubMap, allSubscriptionIds)
     await queryProductApis(ctx, product, apiToProductMap)
   }
-  printResults(apiToProductMap, productSubMap);
+  printResults(apiToProductMap, productSubMap, allSubscriptionIds);
 }
 async function main() {
   const subscriptionId = process.env.SUBSCRIPTION_ID
